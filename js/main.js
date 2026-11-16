@@ -10,16 +10,16 @@ import { Font } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { PAL } from './options.js?v=1115-213448';
+import { PAL } from './options.js?v=1115-222730';
 // the robot: the Higgsfield model. The old stand-in made of simple shapes is still there behind ?robot=standin, for comparing.
-const robotLib = await import(new URLSearchParams(location.search).get('robot') === 'standin' ? './robot.js?v=1115-213448' : './robot-model.js?v=1115-213448');
+const robotLib = await import(new URLSearchParams(location.search).get('robot') === 'standin' ? './robot.js?v=1115-222730' : './robot-model.js?v=1115-222730');
 const { createRobot, WAYS } = robotLib;
 if (robotLib.loadRobot) await robotLib.loadRobot();
-import { createFirstWalk, planLayout } from './first-walk.js?v=1115-213448';
-import { createIntroFilm } from './intro-film.js?v=1115-213448';
-import { createHome } from './home-kit.js?v=1115-213448';
-import { createDock, createAntennaPulse, createPlinth, createCtaButton } from './props-kit.js?v=1115-213448';
-import { createSizes } from './sizes.js?v=1115-213448';
+import { createFirstWalk, planLayout } from './first-walk.js?v=1115-222730';
+import { createIntroFilm } from './intro-film.js?v=1115-222730';
+import { createHome } from './home-kit.js?v=1115-222730';
+import { createDock, createAntennaPulse, createPlinth, createCtaButton } from './props-kit.js?v=1115-222730';
+import { createSizes } from './sizes.js?v=1115-222730';
 
 const coarse = matchMedia('(pointer: coarse)').matches;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -303,11 +303,14 @@ const SCREEN = V3(BX + 3.1, 2.4, 7.3);
 const wallA = makeWall(SCREEN.x, SCREEN.z, Math.PI, (k, u, t, on, vid) => film(k, u, t, on, vid));
 // The film itself, made with Higgsfield (Seedance 2.5, from pictures of this robot). It plays in its own time, not with the scroll.
 // If it can't load, the drawn film in intro-film.js plays instead.
-const filmVid = Object.assign(document.createElement('video'), { src: 'media/mosey-at-home.mp4', preload: 'auto', muted: true, playsInline: true });
+// crossOrigin: the film and the photos below are drawn into the 3D scene, and a browser only allows that for pictures it may read.
+// Inside a locked-down frame (Aura's preview, some embeds) the page has no origin of its own, so even its own files count as
+// someone else's unless they are asked for this way. Without it the wall stayed blank there.
+const filmVid = Object.assign(document.createElement('video'), { crossOrigin: 'anonymous', src: 'media/mosey-at-home.mp4', preload: 'auto', muted: true, playsInline: true });
 filmVid.setAttribute('playsinline', '');
 const filmS = { where: null, t: 0, done: false, sound: true }, FILM_LEN = 40;
 const filmReady = () => filmVid.readyState >= 2 && !filmVid.error;
-const photos = ['kitchen', 'keys', 'night'].map((n) => Object.assign(new Image(), { src: `media/photo-${n}.jpg` }));      // its photo album: three Higgsfield pictures of it at home
+const photos = ['kitchen', 'keys', 'night'].map((n) => Object.assign(new Image(), { crossOrigin: 'anonymous', src: `media/photo-${n}.jpg` }));      // its photo album: three Higgsfield pictures of it at home
 // Each photo is decoded as soon as it has arrived, off the main thread (im.bmp). The wall then draws a ready picture. Without this
 // the browser decoded all three the first time the album was drawn, which was a stall of several frames on a slow phone.
 if (window.createImageBitmap) photos.forEach((im) => { const go = () => createImageBitmap(im).then((b) => { im.bmp = b; }).catch(() => {}); if (im.complete && im.naturalWidth) go(); else im.addEventListener('load', go, { once: true }); });

@@ -100,7 +100,7 @@ const shadows = (m, cast = true, receive = true) => { m.castShadow = cast; m.rec
 /* ---------- the charging dock ---------- */
 
 // segments is kept so older calls still work. The light ring is one continuous band now.
-export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngle = 0 }) {
+export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngle = 0, plugAt = null, plugDir = null }) {      // plugAt, plugDir: a socket on a wall (its middle, and which way the wall faces), in the dock's own measure. Given, the cable goes up into it
   const group = new THREE.Group();
   const shell = new THREE.MeshPhysicalMaterial({ color: '#1a1a20', metalness: 0.42, roughness: 0.45, clearcoat: 0.22, clearcoatRoughness: 0.45 });      // dark anodised metal
   const soft = new THREE.MeshStandardMaterial({ color: '#27272d', roughness: 0.82 });                                              // soft plastic: the foot, the cable and its plugs
@@ -136,15 +136,21 @@ export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngl
   }
 
   // the cable: a plug with a ribbed strain relief in the side of the display, a soft curve along the floor, and the wall plug at the far end
-  const PLUG = new THREE.Vector3(2.3, 0, -1.9), PORT = new THREE.Vector3(0.2, 0.046, FRONT - 0.13);
+  const PLUG = new THREE.Vector3(2.3, 0, -1.9), PORT = new THREE.Vector3(0.2, 0.046, FRONT - 0.13); let cablePath = null;
   {
     const ribs = [[0.008, 0]]; for (let i = 0; i < 7; i++) { const r = 0.0215 - i * 0.0011, y = 0.002 + i * 0.012; ribs.push([r, y], [r, y + 0.007], [r - 0.004, y + 0.0085], [r - 0.004, y + 0.012]); } ribs.push([0.0125, 0.088]);
     const reliefG = () => new THREE.LatheGeometry(ribs.map(([r, y]) => new THREE.Vector2(r, y)), 18);
     const gripG = lathe(THREE, [[0, 0], [0.0195, 0, 0.004, 3], [0.021, 0.02, 0.003, 2], [0.021, 0.07, 0.004, 3], [0.016, 0.076]], 20).rotateZ(-Math.PI / 2).translate(PORT.x + 0.008, PORT.y, PORT.z);
-    const path = new THREE.CatmullRomCurve3([[PORT.x + 0.1, PORT.y, PORT.z], [PORT.x + 0.2, PORT.y, PORT.z], [0.56, 0.02, PORT.z - 0.03], [0.82, 0.0135, PORT.z - 0.11], [1.15, 0.0135, -1.36], [1.5, 0.0135, -1.72], [PLUG.x - 0.42, 0.018, PLUG.z + 0.02], [PLUG.x - 0.23, 0.042, PLUG.z], [PLUG.x - 0.1, 0.042, PLUG.z]].map((p) => new THREE.Vector3(...p)), false, 'centripetal');
+    const pathFloor = new THREE.CatmullRomCurve3([[PORT.x + 0.1, PORT.y, PORT.z], [PORT.x + 0.2, PORT.y, PORT.z], [0.56, 0.02, PORT.z - 0.03], [0.82, 0.0135, PORT.z - 0.11], [1.15, 0.0135, -1.36], [1.5, 0.0135, -1.72], [PLUG.x - 0.42, 0.018, PLUG.z + 0.02], [PLUG.x - 0.23, 0.042, PLUG.z], [PLUG.x - 0.1, 0.042, PLUG.z]].map((p) => new THREE.Vector3(...p)), false, 'centripetal');
+    // To a wall socket: out of the display's side, a relaxed curve across the floor to the foot of the wall under the socket, up the wall, and into the plug from below
+    const A = plugAt, Dn = plugDir, wallPts = A && [[PORT.x + 0.1, PORT.y, PORT.z], [PORT.x + 0.22, PORT.y, PORT.z], [PORT.x + 0.5, 0.02, PORT.z + 0.1], [(PORT.x + A.x) / 2 + 0.25, 0.0135, (PORT.z + A.z) / 2 + 0.3], [A.x + Dn.x * 0.34 + 0.12, 0.0135, A.z + Dn.z * 0.34], [A.x + Dn.x * 0.16, 0.05, A.z + Dn.z * 0.16], [A.x + Dn.x * 0.11, 0.3, A.z + Dn.z * 0.11], [A.x + Dn.x * 0.11, A.y - 0.2, A.z + Dn.z * 0.11]];
+    const path = A ? new THREE.CatmullRomCurve3(wallPts.map((q) => new THREE.Vector3(q[0], q[1], q[2])), false, 'centripetal') : pathFloor;
     const tube = new THREE.TubeGeometry(path, 110, 0.0125, 8);
-    const plugG = slab(THREE, roundRect(THREE, 0.24, 0.14, 0.035), 0.085, 0.014).rotateX(-Math.PI / 2).translate(PLUG.x, 0.002, PLUG.z);
-    group.add(shadows(new THREE.Mesh(merge(THREE, [footG, tube, gripG, reliefG().rotateZ(-Math.PI / 2).translate(PORT.x + 0.08, PORT.y, PORT.z), reliefG().rotateZ(Math.PI / 2).translate(PLUG.x - 0.115, 0.042, PLUG.z), plugG]), soft)));
+    const plugG = A ? new THREE.BoxGeometry(0.2, 0.2, 0.11).translate(0, 0, 0.055) : slab(THREE, roundRect(THREE, 0.24, 0.14, 0.035), 0.085, 0.014).rotateX(-Math.PI / 2).translate(PLUG.x, 0.002, PLUG.z);
+    if (A) { const yaw = Math.atan2(Dn.x, Dn.z); plugG.rotateY(yaw).translate(A.x + Dn.x * 0.03, A.y, A.z + Dn.z * 0.03); }      // the plug: a body flat against the socket, and its strain relief hanging under it where the cable comes in
+    const relief2 = A ? reliefG().rotateZ(Math.PI).translate(A.x + Dn.x * 0.11, A.y - 0.1, A.z + Dn.z * 0.11) : reliefG().rotateZ(Math.PI / 2).translate(PLUG.x - 0.115, 0.042, PLUG.z);
+    group.add(shadows(new THREE.Mesh(merge(THREE, [footG, tube, gripG, reliefG().rotateZ(-Math.PI / 2).translate(PORT.x + 0.08, PORT.y, PORT.z), relief2, plugG]), soft)));
+    cablePath = path;
   }
 
   // brass: a hairline ring round the landing pad, two charging contacts, the metal collar of the plug, and the prongs of the wall plug
@@ -153,7 +159,7 @@ export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngl
     const contact = (x) => slab(THREE, roundRect(THREE, 0.11, 0.036, 0.018), 0.006, 0.002, 6).rotateX(-Math.PI / 2).translate(x, 0.0465, -0.3);
     const collar = lathe(THREE, [[0, 0], [0.0235, 0, 0.002, 2], [0.0235, 0.012, 0.002, 2], [0.018, 0.012]], 20).rotateZ(-Math.PI / 2).translate(PORT.x, PORT.y, PORT.z);
     const prong = (z) => slab(THREE, roundRect(THREE, 0.07, 0.012, 0.004), 0.03, 0.002, 3).rotateX(-Math.PI / 2).translate(PLUG.x + 0.15, 0.03, PLUG.z + z);
-    group.add(shadows(new THREE.Mesh(merge(THREE, [trim, contact(-0.09), contact(0.09), collar, prong(-0.035), prong(0.035)]), brass), false));
+    group.add(shadows(new THREE.Mesh(merge(THREE, plugAt ? [trim, contact(-0.09), contact(0.09), collar] : [trim, contact(-0.09), contact(0.09), collar, prong(-0.035), prong(0.035)]), brass), false));      // (in a wall socket the prongs are inside it)
   }
 
   // The ring of light: one frosted band that wraps over the crest of the deck and down its inner side, so the near half shows from low down
@@ -205,6 +211,7 @@ export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngl
   // charge is 0 to 1. While charging the leading end of the light breathes. Off the charger the lit part sits dim and steady.
   const cOn = new THREE.Color(PAL.accent), cDim = cOn.clone().multiplyScalar(0.4), cHot = cOn.clone().lerp(new THREE.Color('#ffffff'), 0.75), cTip = new THREE.Color(), c = new THREE.Color();
   const toByte = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055));      // the strip is stored as sRGB
+  const beads = [0, 1].map(() => { const m = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffe6ad', transparent: true, opacity: 0, toneMapped: false, depthWrite: false, fog: false })); m.visible = false; group.add(m); return m; });
   function update(T, charge = 0, charging = false) {
     charge = clamp01(charge);
     const beat = 0.5 + 0.5 * Math.sin(T * 3.2), full = charge > 0.995;
@@ -226,6 +233,7 @@ export function createDock({ THREE, PAL, DISPLAY, MONO, segments = 24, startAngl
     const pct = Math.round(charge * 100);
     if (pct !== shown.pct || charging !== shown.charging) draw(pct, charging);
     glass.material.emissiveIntensity = charging ? 1.25 : 0.6;
+    beads.forEach((b, i) => { const u = 1 - ((T * 0.3 + i * 0.5) % 1); b.visible = charging && !full; if (b.visible) { cablePath.getPointAt(u, b.position); b.material.opacity = 0.95 * Math.sin(Math.PI * u) ** 0.5; } });      // while it charges, two small lights travel down the cable from the wall to the dock
   }
   update(0, 0, false);
   return { group, update };
@@ -264,6 +272,13 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
   const yellow = new THREE.MeshPhysicalMaterial({ color: PAL.accent, roughness: 0.35, clearcoat: 0.7, clearcoatRoughness: 0.2 });
   const rule = new THREE.MeshPhysicalMaterial({ color: PAL.ink, roughness: 0.45, clearcoat: 0.3, clearcoatRoughness: 0.4 });
   const POST = new THREE.Vector3(post[0], 0, post[1]), TURN = postTurn, CM = robotH / robotCm;
+  // Asleep and awake. The plinth is neutral until he stands on it: its blue, its lettered band and its top are drawn as one even grey, in which the lettering is
+  // barely there. awake() takes it to its real colours. It is one number that those three surfaces read in their shader.
+  const awakeU = { value: 0 }, sleeps = (m) => { m.onBeforeCompile = (sh) => { sh.uniforms.uAwake = awakeU;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uAwake;').replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(vec3(0.5, 0.51, 0.535) * (0.76 + 0.5 * dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2))), diffuseColor.rgb, uAwake);'); };
+    m.customProgramCacheKey = () => 'plinth-awake'; return m; };
+  sleeps(blue);
+  const ring = new THREE.Group(), nums = [], scaleInk = new THREE.MeshStandardMaterial({ color: PAL.ink, roughness: 0.55, transparent: true, opacity: 1 }); group.add(ring);
   const GAP = PH - 0.062, PLAT = PH - 0.052;                      // the drum ends at GAP, the turntable on top starts at PLAT
 
   // ink parts as one mesh: the base of the plinth and the dark core that shows in its shadow gaps, the ruler ring on the floor, the foot of the measuring post
@@ -271,14 +286,15 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
     // the base stands on a foot set in from its edge, so a line of shadow runs between it and the floor
     const base = lathe(THREE, [[0.95, 0], [1.004, 0, 0.003, 2], [1.004, 0.011], [1.045, 0.011, 0.005, 3], [1.045, 0.05, 0.0025, 2], [1.03, 0.063, 0.0025, 2], [0.972, 0.069, 0.003, 2], [0.93, 0.069], [0.93, PLAT + 0.002], [0.9, PLAT + 0.002]], 128);
     const flat = (g) => g.rotateX(-Math.PI / 2).translate(0, 0.003, 0);
-    const parts = [base, flat(new THREE.RingGeometry(1.246, 1.254, 160)), flat(new THREE.RingGeometry(1.2185, 1.2215, 160))];
+    const parts = [base], scaleParts = [flat(new THREE.RingGeometry(1.246, 1.254, 160)), flat(new THREE.RingGeometry(1.2185, 1.2215, 160))];
     for (let i = 0; i < 180; i++) {                       // a fine tick every 2 degrees, longer every 10 and every 30
       const big = i % 15 === 0, mid = i % 5 === 0, len = big ? 0.115 : mid ? 0.07 : 0.036, w = big ? 0.011 : mid ? 0.008 : 0.0058, a = i / 180 * TAU;
       if (Math.hypot(-Math.sin(a) * 1.3 - POST.x, Math.cos(a) * 1.3 - POST.z) < 0.2) continue;                       // leave room for the foot of the post
-      parts.push(new THREE.PlaneGeometry(w, len).rotateX(-Math.PI / 2).translate(0, 0.003, 1.25 + len / 2).rotateY(-a));
+      scaleParts.push(new THREE.PlaneGeometry(w, len).rotateX(-Math.PI / 2).translate(0, 0.003, 1.25 + len / 2).rotateY(-a));
     }
     parts.push(lathe(THREE, [[0.06, 0], [0.135, 0, 0.008], [0.135, 0.022, 0.01], [0.09, 0.04, 0.01], [0.0, 0.04]], 48).translate(POST.x, 0, POST.z));
     group.add(shadows(new THREE.Mesh(merge(THREE, parts), ink)));
+    const sm = new THREE.Mesh(merge(THREE, scaleParts), scaleInk); sm.receiveShadow = true; ring.add(sm);      // the degree scale: its own ring on the floor, which turns once the plinth is awake
   }
   // brass: a satin band between the base and the drum, a fine ring let into the top of the turntable, and a pin that marks its centre
   {
@@ -288,6 +304,7 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
     group.add(shadows(new THREE.Mesh(merge(THREE, [band, inlay, pin]), brass), false));
   }
   // the drum and the turntable, two parts with a shadow gap between them. Each steps in a little where a band is laid on: the lettering on the drum, the grip on the turntable.
+  const bandTex = [];
   const TXT0 = 0.1235, TXT1 = GAP - 0.0245, GRIP0 = PLAT + 0.0062, GRIP1 = PH - 0.0162;
   {
     const drum = lathe(THREE, [[0.92, 0.099], [0.95, 0.099, 0.004, 3], [0.95, TXT0 - 0.002, 0.0012, 2], [0.9465, TXT0], [0.94, TXT0], [0.94, TXT1], [0.9465, TXT1], [0.95, TXT1 + 0.002, 0.0012, 2], [0.95, GAP, 0.003, 3], [0.92, GAP]], 128);
@@ -321,8 +338,8 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
     for (const t of [art.tex, dent.tex]) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = 4; t.offset.x = 0.5; }
     const strip = (r, y0, y1, v0, v1) => { const g = new THREE.LatheGeometry([new THREE.Vector2(r, y0), new THREE.Vector2(r, y1)], 128), uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setY(i, uv.getY(i) > 0.5 ? v1 : v0); return g; };
     const bands = new THREE.Mesh(merge(THREE, [strip(0.9462, TXT0 - 0.0004, TXT1 + 0.0004, 0.008, 0.742), strip(0.9492, GRIP0 - 0.0003, GRIP1 + 0.0003, 0.758, 0.992)]),
-      new THREE.MeshPhysicalMaterial({ map: art.tex, bumpMap: dent.tex, bumpScale: 0.8, roughness: 0.4, clearcoat: 0.6, clearcoatRoughness: 0.22 }));
-    group.add(shadows(bands, false));
+      sleeps(new THREE.MeshPhysicalMaterial({ map: art.tex, bumpMap: dent.tex, bumpScale: 0.8, roughness: 0.4, clearcoat: 0.6, clearcoatRoughness: 0.22 })));
+    group.add(shadows(bands, false)); bandTex.push(art.tex, dent.tex);
   }
 
   // the top of the turntable: a spun finish with a few fine rings cut into it. The pattern runs from the edge to the middle of a tiny texture.
@@ -337,23 +354,21 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
       tone.k.fillStyle = `rgb(${t},${t},${t})`; tone.k.fillRect(0, y, 4, 1);
     }
     const top = new THREE.Mesh(new THREE.LatheGeometry([new THREE.Vector2(RT, PH), new THREE.Vector2(0, PH)], 128),
-      new THREE.MeshPhysicalMaterial({ color: PAL.face, map: tone.tex, bumpMap: bump.tex, bumpScale: 0.4, roughness: 0.36, clearcoat: 0.45, clearcoatRoughness: 0.3 }));
+      sleeps(new THREE.MeshPhysicalMaterial({ color: PAL.face, map: tone.tex, bumpMap: bump.tex, bumpScale: 0.4, roughness: 0.36, clearcoat: 0.45, clearcoatRoughness: 0.3 })));
     group.add(shadows(top, false));
   }
 
+  let numM = null;
   // the numbers of the ruler ring, every 30 degrees, 0 at the front. All of them stand the same way up, so from the front none reads upside down.
   {
-    const { k, tex } = makeCanvas(THREE, 1024, 256), pos = [], nor = [], uv = [], idx = [], R = 1.485, w = 0.184, h = 0.138;
+    const { k, tex } = makeCanvas(THREE, 1024, 256), R = 1.485, w = 0.184, h = 0.138;
     k.fillStyle = PAL.ink; k.globalAlpha = 0.9; k.textAlign = 'center'; k.textBaseline = 'middle'; k.font = `700 72px ${MONO}`;
-    for (let i = 0; i < 12; i++) {
+    numM = new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 0.6, side: THREE.DoubleSide, forceSinglePass: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    for (let i = 0; i < 12; i++) {      // each number is its own small mesh on the ring: as the ring turns, each is turned back about its own middle, so it is always the right way up
       const col = i % 6, row = Math.floor(i / 6); k.fillText(String(i * 30), (col + 0.5) * 1024 / 6, row * 128 + 68);
-      const a = i / 12 * TAU, dx = -Math.sin(a), dz = Math.cos(a), ux = 0, uz = -1, rx = 1, rz = 0, u0 = col / 6, u1 = (col + 1) / 6, v1 = 1 - row / 2, v0 = v1 - 0.5;
-      for (const [sx, sy, u, v] of [[-1, -1, u0, v0], [1, -1, u1, v0], [1, 1, u1, v1], [-1, 1, u0, v1]]) { pos.push(dx * R + rx * sx * w / 2 + ux * sy * h / 2, 0.004, dz * R + rz * sx * w / 2 + uz * sy * h / 2); nor.push(0, 1, 0); uv.push(u, v); }
-      idx.push(i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3);
+      const a = i / 12 * TAU, g = new THREE.PlaneGeometry(w, h).rotateX(-Math.PI / 2), uv = g.attributes.uv, u0 = col / 6, v1 = 1 - row / 2; for (let j = 0; j < uv.count; j++) uv.setXY(j, u0 + uv.getX(j) / 6, v1 - 0.5 + uv.getY(j) * 0.5);
+      const m = new THREE.Mesh(g, numM); m.position.set(-Math.sin(a) * R, 0.004, Math.cos(a) * R); m.receiveShadow = true; ring.add(m); nums.push(m);
     }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, transparent: true, depthWrite: false, roughness: 0.6, side: THREE.DoubleSide, forceSinglePass: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
-    m.receiveShadow = true; group.add(m);
   }
 
   // the measuring post: an ink ruler with paper marks that starts counting at the top of the plinth, where the robot stands
@@ -382,7 +397,21 @@ export function createPlinth({ THREE, PAL, PH = 0.3, DISPLAY = '"Archivo Black",
     const text = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.1).translate(0.245, MY, 0.004 + 0.018 + 0.0012), new THREE.MeshStandardMaterial({ map: tag.tex, transparent: true, depthWrite: false, roughness: 0.5 }));
     post.add(text);
   }
-  return { group };
+  // What waking looks like: a line of light runs once round the rim of the turntable and leaves a faint glow there, and a soft warm light comes on under the plinth.
+  const rimU = { uRun: { value: 1 }, uOn: { value: 0 } };
+  const rim = new THREE.Mesh(new THREE.RingGeometry(0.922, 0.952, 160).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ uniforms: rimU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    vertexShader: 'varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float uRun, uOn; varying vec2 vP; void main() { float a = fract(atan(vP.x, vP.y) / 6.2831853 + 0.5), d = fract(uRun * 1.12 - a), head = exp(-d * 7.0) * step(a, uRun * 1.12) * (1.0 - smoothstep(0.85, 1.0, uRun)), r = length(vP), edge = smoothstep(0.922, 0.93, r) * smoothstep(0.952, 0.944, r);
+      gl_FragColor = vec4(vec3(1.0, 0.93, 0.8) * (head * 1.5 + uOn * 0.16) * edge, 1.0); }` }));
+  rim.position.y = PH + 0.0022; rim.renderOrder = 3; group.add(rim);
+  const gc = document.createElement('canvas'); gc.width = gc.height = 128; { const k = gc.getContext('2d'), g = k.createRadialGradient(64, 64, 26, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.45, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)'); k.fillStyle = g; k.fillRect(0, 0, 128, 128); }
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 4.6).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(gc), color: '#ffe3ad', transparent: true, opacity: 0, depthWrite: false })); glow.position.y = 0.0015; glow.renderOrder = -1; group.add(glow);
+  // k: how awake it is (0 asleep, 1 awake). run: the line round the rim, 0 to 1 over the first second awake. turn: seconds of turning to add this frame (0 with reduced motion).
+  // Once awake the lettered band turns one way, six degrees a second, and the scale on the floor the other way at less than half of that, like a lens barrel and its focus ring.
+  const awake = (k, run, turn) => { awakeU.value = k; rimU.uRun.value = run; rimU.uOn.value = k; glow.material.opacity = 0.42 * k; scaleInk.opacity = 0.3 + 0.7 * k; if (numM) numM.opacity = 0.3 + 0.7 * k;
+    if (turn) { for (const t of bandTex) t.offset.x -= turn * k * (6 / 360) * 4; ring.rotation.y -= turn * k * 2.6 * Math.PI / 180; for (const m of nums) m.rotation.y = -ring.rotation.y; } };
+  awake(0, 1, 0);
+  return { group, awake, ring };
 }
 
 /* ---------- the RESERVE button ---------- */

@@ -29,9 +29,13 @@ function answer(n, yes) { n.el.querySelector('.pn-done').textContent = yes ? n.d
 const back = el('i', 'pb-back'), frame = el('i', 'pb-frame'), side = el('div', 'pb-side', '<p class="pb-h">It was on your phone the whole time.</p><div class="pb-list" role="status"></div>');
 for (const x of [back, frame]) x.setAttribute('aria-hidden', 'true');
 const list = side.querySelector('.pb-list'); NOTES.forEach((n) => list.append(note(n)));
+// Instead of a dark background colour, the scene itself is a subtle black and white picture behind everything. A small canvas behind it all gets a copy of the 3D picture while the phone is up, and the
+// stylesheet (css/quiet.css) greys and softens it. Small on purpose: 192 pixels wide is already a blur, and it costs next to nothing.
+const bg = new URLSearchParams(location.search).get('ui') !== 'full' ? el('canvas', 'pb-bg') : null;
+if (bg) { bg.width = 192; bg.height = 120; bg.setAttribute('aria-hidden', 'true'); document.body.append(bg); }
 document.body.append(back, frame, side);
 
-const moved = [document.getElementById('world'), document.getElementById('hud'), back, frame].filter(Boolean);      // what --pk moves
+const moved = [document.getElementById('world'), document.getElementById('hud'), back, frame, bg].filter(Boolean);      // what --pk moves
 let shown = -1;
 (function tick(now) {
   requestAnimationFrame(tick);
@@ -45,3 +49,11 @@ let shown = -1;
     if (TAP && on && n.acts && !n.el.classList.contains('answered')) { if (now - n.t0 > 1500) n.el.classList.add('hit'); if (now - n.t0 > 1750) answer(n, true); }
   }
 })(performance.now());
+
+// The copy has to be taken after the page has drawn its frame and before the browser shows it, or the 3D canvas reads back empty.
+// The page asks for its next frame at the end of its own (js/main.js). Asking for ours from a timer, after that, puts us behind it in line.
+if (bg) { const world = document.getElementById('world'), g = bg.getContext('2d');
+  (function copy() {
+    if (shown > 0 && world?.width) { const h = Math.max(60, Math.round(192 * world.height / world.width)); if (bg.height !== h) bg.height = h; try { g.drawImage(world, 0, 0, bg.width, bg.height); } catch { /* the page still works without the backdrop */ } }
+    setTimeout(() => requestAnimationFrame(copy), shown > 0 ? 0 : 200);
+  })(); }

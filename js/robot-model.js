@@ -1,5 +1,5 @@
-// Mosey, the real one: the Higgsfield model (Tripo mesh, Meshy skeleton and walk, torso and head re-skinned
-// to single bones, see assets/model/README.md) behind the same calls as the stand-in in robot.js.
+// Mosey, the generated one (?robot=generated): the Higgsfield model (Tripo mesh, Meshy skeleton and walk, torso and head re-skinned
+// to single bones) behind the same calls as the Blender robot in robot-machined.js. The page used this one before the Blender robot.
 //
 // The file has one clip, a walk. Everything else is done on the skeleton in code:
 // the walk is scrubbed by distance, it fades into a standing pose when the robot stops,
@@ -240,6 +240,11 @@ export function createRobot() {
   }
 
   const blob = new THREE.Mesh(new THREE.CircleGeometry(0.3, 24), new THREE.MeshBasicMaterial({ color: 0x1a1830, transparent: true, opacity: 0.18, depthWrite: false }));
+  if (new URLSearchParams(location.search).get('shadow') === 'soft') {      // ?shadow=soft: the flat disc becomes a contact shadow, dark under the feet and gone by the edge
+    const c = document.createElement('canvas'); c.width = c.height = 128; const k = c.getContext('2d'), g = k.createRadialGradient(64, 64, 2, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,255,255,0.55)'); g.addColorStop(0.7, 'rgba(255,255,255,0.12)'); g.addColorStop(1, 'rgba(255,255,255,0)'); k.fillStyle = '#000'; k.fillRect(0, 0, 128, 128); k.fillStyle = g; k.fillRect(0, 0, 128, 128);
+    blob.geometry = new THREE.PlaneGeometry(0.86, 0.66); blob.material.alphaMap = new THREE.CanvasTexture(c); blob.material.color.set(0x14121c); blob.userData.soft = 2.6;
+  }
   blob.rotation.x = -Math.PI / 2; blob.position.y = 0.012; root.add(blob);
 
   // turn a bone about an axis given in the robot's own space (x to its left, y up, z forward), whatever the bone's own axes are
@@ -393,7 +398,7 @@ export function createRobot() {
     beam.material.opacity = A.scan * (0.2 + Math.sin(T * 9) * 0.03); beam.visible = A.scan > 0.02;
     halo.material.opacity = 0.4 + (st.glow || 0) * 0.6 + A.talk * Math.max(0, Math.sin(T * 9)) * 0.4;                // it glows a little, more in the dark, and pulses when it talks
 
-    blob.material.opacity = st.blobOff ? 0 : 0.18 * (1 - s.air) * (st.falling ? 0 : 1);
+    blob.material.opacity = st.blobOff ? 0 : 0.18 * (blob.userData.soft || 1) * (1 - s.air) * (st.falling ? 0 : 1);
     blob.scale.setScalar(1.1 - s.hop * 0.8 + down * 0.5);
   }
 

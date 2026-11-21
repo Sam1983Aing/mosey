@@ -3,6 +3,7 @@
 //   createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z })  ->  { group, keyObj, catBody, update(T) }
 // The path it walks (x within SX ± 0.6, up to y 1.3) stays empty from the sock to the stove.
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import { addRooms } from './home-rooms.js?v=1117-230645';
 
 export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
   const group = new THREE.Group();
@@ -56,6 +57,23 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
   // a soft round shadow, and a soft-edged rectangle, to sit things on the floor
   const blobT = texOf(paint(128, 128, (x, y) => { const r = Math.hypot(x - 63.5, y - 63.5) / 64; return Math.pow(Math.max(0, 1 - r), 1.6); }, true));
   const softRectT = texOf(paint(256, 128, (x, y) => { const u = Math.abs(x - 127.5) / 128, v = Math.abs(y - 63.5) / 64; return smooth(1 - u, 0, 0.22) * smooth(1 - v, 0, 0.42); }, true));
+
+  /* ---------- photos of real surfaces (media/home) ---------- */
+  // Eight photos: oak boards, oak veneer, a sofa weave, wool, linen, wall plaster, a ceramic glaze, stone. Every material is first made with a drawn texture,
+  // so the home is whole before a single photo has arrived. The page asks for the photos after its first frame (loadPhotos), and each one is put into the
+  // materials that wait for it. Only textures are swapped, in slots that were already filled, so no shader is built again.
+  const waiting = {}, PHOTOS = ['oak-floor', 'oak-veneer', 'sofa-weave', 'wool-rug', 'linen', 'wall-paint', 'ceramic-glaze', 'stone-tile', 'facade-timber', 'outside'];
+  const onPhoto = (name, fn) => { (waiting[name] ||= []).push(fn); };
+  const idle = (f) => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 1500 }) : setTimeout(f, 30));
+  const loadPhotos = () => PHOTOS.forEach((name, i) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => (waiting[name] || []).forEach((fn, j) => setTimeout(() => idle(() => fn(im)), i * 60 + j * 40)); im.src = `media/home/${name}.jpg`; });      // one small job at a time, when the page has a free moment
+  // a photo as a texture that tiles by mirroring (an image model's picture does not join up with itself at the edges). size: the canvas it is drawn on. tint multiplies it. wash lays a flat colour over it (0 none, 1 only the colour).
+  const photoTex = (im, { size = 1024, tint = null, wash = null, washK = 0, rep = [1, 1], turn = 0, srgb = true } = {}) => { const c = canvas(size, size), k = c.getContext('2d'); k.drawImage(im, 0, 0, size, size);
+    if (tint) { k.globalCompositeOperation = 'multiply'; k.fillStyle = tint; k.fillRect(0, 0, size, size); k.globalCompositeOperation = 'source-over'; }
+    if (wash) { k.globalAlpha = washK; k.fillStyle = wash; k.fillRect(0, 0, size, size); k.globalAlpha = 1; }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.repeat.set(rep[0], rep[1]); t.anisotropy = 8; if (turn) { t.center.set(0.5, 0.5); t.rotation = turn; } if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  // the relief of a photo: its brightness read as height, at 512, turned into a normal map
+  const photoRelief = (im, strength = 2, rep = [1, 1]) => { const c = canvas(512, 512); c.getContext('2d').drawImage(im, 0, 0, 512, 512); const t = new THREE.CanvasTexture(normalFrom(c, strength)); t.wrapS = t.wrapT = THREE.MirroredRepeatWrapping; t.repeat.set(rep[0], rep[1]); t.anisotropy = 8; return t; };
+  const swap = (m, o) => { Object.assign(m, o); m.needsUpdate = false; };      // new pictures in slots that were filled before: uniforms only
 
   /* ---------- materials ---------- */
   const cloth = (color, o = {}) => new THREE.MeshPhysicalMaterial({ color, map: heather, normalMap: weaveN, normalScale: V2(0.85, 0.85), roughness: 0.96, sheen: 0.5, sheenRoughness: 0.55, sheenColor: new THREE.Color(color).lerp(new THREE.Color('#ffffff'), 0.4), ...o });
@@ -186,6 +204,8 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
   {
     const X = SX, Zc = Z.sofa, parts = [], pipes = [];
     const fabric = cloth('#ac987e', { vertexColors: true }), welt = cloth('#8a765d');
+    onPhoto('sofa-weave', (im) => { swap(fabric, { map: photoTex(im, { size: 768, rep: [0.42, 0.42] }), normalMap: photoRelief(im, 2.6, [0.42, 0.42]) }); fabric.color.set('#d8cbb4'); fabric.normalScale.set(1.1, 1.1);      // a chunky oatmeal basket weave, one yarn about 3 mm wide
+      swap(welt, { map: photoTex(im, { size: 512, rep: [0.8, 0.8] }) }); welt.color.set('#b7a78c'); });
     // one upholstered piece and the piping round its rim. rim 'y' runs round the top and bottom, 'z' round the front face.
     // floor: the piece is built that much taller and cut flat there, so its lower edges are not rounded.
     const piece = (w, h, d, o, x, y, z, rx = 0, ry = 0, rz = 0, rim = '', floor = null) => {
@@ -214,7 +234,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
       caps.push(put(lathe([[0.001, -1.325], [0.14, -1.325], [0.165, -1.29], [0.2, -1.0], [0.19, -0.99]], 28), x, 1.335, z, rx, 0, rz));
       sit(x + sx * 0.11, z + sz * 0.09, 1.0);
     }
-    add(merge(legs), wood('#c2a078', { rep: [3, 1] })); add(merge(caps), brass);
+    { const legM = wood('#c2a078', { rep: [3, 1] }); add(merge(legs), legM); onPhoto('oak-veneer', (im) => { swap(legM, { map: photoTex(im, { size: 512, rep: [1.5, 0.5] }) }); legM.color.set('#e9d3b2'); }); } add(merge(caps), brass);
 
     // underneath: a wooden frame, jute webbing, and a dark dust cloth above it all
     const rails = [softBox(15.6, 0.3, 0.5, { r: 0.04, uv: 1 }), softBox(15.6, 0.3, 0.5, { r: 0.04, uv: 1 })];
@@ -363,7 +383,8 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
     kb.putImageData(img, 0, 0);
     const ribN = texOf(normalFrom(paint(128, 128, (x, y) => Math.pow(Math.abs(Math.sin(PI * y / 16)), 0.6) * (0.7 + 0.3 * Math.sin(PI * (x + (Math.floor(y / 16) & 1) * 8) / 8))), 2.6), { srgb: false, rep: [26, 21] });
     const rug = sheet(50, 40, (u, v) => { const c = Math.max(0, u - 0.84) * Math.max(0, 0.2 - v) / 0.032; return V3(cx - W / 2 + u * W - 0.25 * c * c, RUG / 2 + 0.008 * Math.sin(u * 23 + v * 9) + 0.42 * c * c, cz + D / 2 - v * D - 0.2 * c * c); }, RUG);      // one corner has turned up
-    add(rug, new THREE.MeshStandardMaterial({ map: texOf(big), normalMap: ribN, normalScale: V2(0.9, 0.9), roughness: 1 }), { cast: false });
+    const rugM = new THREE.MeshStandardMaterial({ map: texOf(big), normalMap: ribN, normalScale: V2(0.9, 0.9), roughness: 1 }); add(rug, rugM, { cast: false });
+    onPhoto('wool-rug', (im) => { const c = canvas(BW, BH), k = c.getContext('2d'); k.drawImage(big, 0, 0); k.globalCompositeOperation = 'multiply'; k.globalAlpha = 0.85; for (let j = 0; j < 4; j++) for (let i = 0; i < 5; i++) { k.save(); k.translate(i * 256 - 128 + (i & 1 ? 256 : 0), j * 256); k.scale(i & 1 ? -1 : 1, 1); k.drawImage(im, 0, 0, 256, 256); k.restore(); } swap(rugM, { map: texOf(c) }); });      // the same pattern, now with real wool in it: the photo is multiplied over the drawing
     // the fringe: one thin strand, many times, lying on the floor
     const strand = new THREE.CylinderGeometry(0.008, 0.004, 0.36, 4, 1); strand.translate(0, 0.18, 0); strand.rotateX(PI / 2);
     const N = 2 * 230, fringe = new THREE.InstancedMesh(strand, new THREE.MeshStandardMaterial({ color: '#e2d7c2', roughness: 1 }), N), o = new THREE.Object3D();
@@ -528,6 +549,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
 
   /* ---------- the room: a papered wall with a skirting board on the left, a tiled wall behind the stove ---------- */
   const WX = SX - 11.6;                                        // the face of the left wall
+  let paperM = null, glossM = null, slipperFn = null, tileWallM = null;      // handed on to the other rooms (js/home-rooms.js)
   {
     const paperC = (() => { const c = canvas(512, 512), k = c.getContext('2d'); k.fillStyle = '#c3c9b6'; k.fillRect(0, 0, 512, 512);
       for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) for (const ox of [-512, 0, 512]) {             // a small sprig, repeated in a half drop
@@ -536,11 +558,10 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
         k.fillStyle = 'rgba(160,168,146,.9)'; k.beginPath(); k.arc(0, 8, 5, 0, 7); k.fill(); k.fillRect(-1, 8, 2, 30); k.restore();
       }
       const d = k.getImageData(0, 0, 512, 512); for (let i = 0; i < d.data.length; i += 4) { const n = 0.95 + 0.05 * hash(i >> 2, i >> 12); d.data[i] *= n; d.data[i + 1] *= n; d.data[i + 2] *= n; } k.putImageData(d, 0, 0); return texOf(c); })();
-    const wall = new THREE.BoxGeometry(0.4, 14, 34.4); put(wall, WX - 0.2, 7, -36.5);
-    add(boxUV(wall, 0.5), new THREE.MeshStandardMaterial({ map: paperC, roughness: 0.95 }), { cast: false });
+    paperM = new THREE.MeshStandardMaterial({ map: paperC, roughness: 0.95 });      // the wall itself is built with the other walls now (js/home-rooms.js), with two windows in it
     const prof = new THREE.Shape(); prof.moveTo(0, 0); prof.lineTo(0.17, 0); prof.lineTo(0.17, 0.74); prof.quadraticCurveTo(0.17, 0.86, 0.1, 0.9); prof.quadraticCurveTo(0.05, 0.93, 0.05, 1.0); prof.quadraticCurveTo(0.05, 1.08, 0, 1.1); prof.lineTo(0, 0);
     const skirt = new THREE.ExtrudeGeometry(prof, { depth: 34.4, bevelEnabled: false, curveSegments: 6 }); put(skirt, WX, 0, -53.7);
-    const gloss = new THREE.MeshStandardMaterial({ color: '#f2eee5', roughness: 0.42 });
+    const gloss = glossM = new THREE.MeshStandardMaterial({ color: '#f2eee5', roughness: 0.42 });
     add(skirt, gloss, { cast: false });
     // two sockets on the wall, a lamp plug in one and a phone charger in the other
     const plates = [], sockC = (() => { const c = canvas(128, 128), k = c.getContext('2d'); k.fillStyle = '#f2eee5'; k.fillRect(0, 0, 128, 128); const g = k.createRadialGradient(64, 60, 30, 64, 64, 46); g.addColorStop(0, '#dedad0'); g.addColorStop(0.85, '#e9e5dc'); g.addColorStop(1, '#bdb8ad'); k.fillStyle = g; k.beginPath(); k.arc(64, 64, 45, 0, 7); k.fill(); k.fillStyle = '#2a2a2e'; for (const x of [46, 82]) { k.beginPath(); k.arc(x, 64, 6, 0, 7); k.fill(); } return texOf(c); })();
@@ -552,8 +573,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
     const tileH = paint(512, 512, (x, y) => { const fx = (x % 128) / 128, fy = (y % 128) / 128, e = Math.min(fx, 1 - fx, fy, 1 - fy); return smooth(e, 0.02, 0.07); });
     const tileC = (() => { const c = canvas(512, 512), k = c.getContext('2d'); k.fillStyle = '#c9c2b4'; k.fillRect(0, 0, 512, 512); for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) { const n = 236 + hash(i, j) * 12 | 0; k.fillStyle = `rgb(${n},${n - 2},${n - 8})`; k.beginPath(); k.roundRect(i * 128 + 4, j * 128 + 4, 120, 120, 5); k.fill(); } return texOf(c); })();
     const tileR = texOf(paint(512, 512, (x, y) => { const fx = (x % 128) / 128, fy = (y % 128) / 128, e = Math.min(fx, 1 - fx, fy, 1 - fy); return e < 0.035 ? 0.95 : 0.2; }), { srgb: false });
-    const tiles = new THREE.BoxGeometry(0.4, 14, 13.4); put(tiles, SX + 9.95, 7, -47);
-    add(boxUV(tiles, 0.2), new THREE.MeshStandardMaterial({ map: tileC, normalMap: texOf(normalFrom(tileH, 3), { srgb: false }), roughnessMap: tileR, roughness: 1 }), { cast: false });
+    tileWallM = new THREE.MeshStandardMaterial({ map: tileC, normalMap: texOf(normalFrom(tileH, 3), { srgb: false }), roughnessMap: tileR, roughness: 1 });      // behind the stove. Built with the other walls too: the bath has a door in it
   }
 
   /* ---------- set dressing: the things that lie around a living room and a kitchen ---------- */
@@ -592,7 +612,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
       const b = 0.035, here = (g) => put(g, B.x, y, B.z, 0, ry, 0), zs = d / 2 + 0.016;                 // b: how thick a board is. zs: the face of the spine
       // two boards, a spine with rounded shoulders, and the page block set back from the three open edges
       const cover = merge([put(softBox(w, b, d, { r: 0.015, c: 2, flat: 2, uv: 3 }), 0, b / 2, 0), put(softBox(w, b, d, { r: 0.015, c: 2, flat: 2, uv: 3 }), 0, h - b / 2, 0), put(softBox(w, h, 0.1, { r: 0.045, c: 3, flat: 2, uv: 3 }), 0, h / 2, d / 2 - 0.035)]);
-      cloths.push(tint(here(cover), color));
+      cloths.push(here(tint(cover, color)));
       pagesG.push(here(boxUV(new THREE.BoxGeometry(w - 0.12, h - 2 * b + 0.004, d - 0.14).translate(0, h / 2, -0.03), 6)));
       // gilt bands on the spine, and a title label on two of them
       for (const x of [-w / 2 + 0.16, -w / 2 + 0.22, w / 2 - 0.16, w / 2 - 0.22]) brassG.push(here(new THREE.BoxGeometry(0.022, h - 0.09, 0.006).translate(x, h / 2, zs)));
@@ -643,7 +663,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
       tinted.push(tint(here(soleG), '#b8b2a8'), tint(here(treadG), '#4b4640'), tint(here(inG), '#ece4d4'));
       sit(x0, z0, 1.5, 2.9, ry);
     };
-    slipper(1, SX - 5.0, -27.2, 0.22); slipper(-1, SX - 3.75, -27.55, -0.3);
+    slipper(1, SX - 5.0, -27.2, 0.22); slipper(-1, SX - 3.75, -27.55, -0.3); slipperFn = slipper;
   }
   { // a rubber plant in a terracotta pot
     const P = V3(SX + 6.0, 0, -25.0);
@@ -677,7 +697,7 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
     add(put(new THREE.SphereGeometry(0.095, 24, 16), SX - 4.0, 0.095, Z.sofa + 1.05, 0.5, 0.3, 0.8), new THREE.MeshPhysicalMaterial({ map: swirlC, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.03, envMapIntensity: 2.2 })); sit(SX - 4.0, Z.sofa + 1.05, 0.4);
     tinted.push(tint(put(cord([[0, 0.012, 0], [0.5, 0.012, 0.012], [0.57, 0.014, 0.04], [0.5, 0.02, 0.07], [0.33, 0.012, 0.058], [0.22, 0.02, 0.075], [0.11, 0.012, 0.058], [0, 0.014, 0.072]], 0.0085, 40, 5), SX + 2.5, 0, Z.sofa - 2.0, 0, 0.9, 0), '#26262b'));
     const brick = [softBox(0.5, 0.26, 0.25, { r: 0.018, c: 2, flat: 1 })]; for (const x of [-0.125, 0.125]) brick.push(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 14).translate(x, 0.155, 0));
-    tinted.push(tint(put(merge(brick), SX - 5.9, 0.13, Z.sofa - 0.4, 0, 0.7, 0), PAL.accent)); sit(SX - 5.9, Z.sofa - 0.4, 0.8, 0.6, 0.7);
+    tinted.push(put(tint(merge(brick), PAL.accent), SX - 5.9, 0.13, Z.sofa - 0.4, 0, 0.7, 0)); sit(SX - 5.9, Z.sofa - 0.4, 0.8, 0.6, 0.7);
     for (let i = 0; i < 9; i++) tinted.push(tint(put(new THREE.IcosahedronGeometry(rr(0.012, 0.03), 0), SX + 2.3 + rr(-0.5, 0.5), 0.015, Z.sofa + 0.1 + rr(-0.4, 0.4), rr(0, 3), rr(0, 3), 0), '#cdb68c'));
     const blockC = (() => { const c = canvas(128, 128), k = c.getContext('2d'); k.fillStyle = '#e4cfa6'; k.fillRect(0, 0, 128, 128); k.strokeStyle = PAL.face; k.lineWidth = 7; k.strokeRect(13, 13, 102, 102); k.fillStyle = PAL.face; k.font = '900 76px Georgia, serif'; k.textAlign = 'center'; k.textBaseline = 'middle'; k.fillText('M', 64, 69); return texOf(c); })();
     const cubes = [[SX + 2.8, -39.5, 0.5], [SX + 3.45, -40.25, -0.3]].map(([x, z, ry]) => { sit(x, z, 0.9, 0.9, ry, RUG + 0.012); return put(new RoundedBoxGeometry(0.44, 0.44, 0.44, 4, 0.05), x, RUG + 0.22, z, 0, ry, 0); });
@@ -698,9 +718,11 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
     woods.push(put(softBox(3.1, 0.62, 0.14, { r: 0.06, c: 2, flat: 2, uv: 0.6 }), C.x, 7.5, C.z + 1.62, 0.055, 0, 0), put(softBox(3.0, 0.3, 0.1, { r: 0.04, c: 2, flat: 2, uv: 0.6 }), C.x, 5.7, C.z + 1.52, 0.055, 0, 0));
     for (const z of [-1.4, 1.4]) woods.push(put(softBox(2.7, 0.32, 0.1, { r: 0.03, c: 1, flat: 1, uv: 0.6 }), C.x, 3.44, C.z + z)); for (const x of [-1.4, 1.4]) woods.push(put(softBox(0.1, 0.32, 2.7, { r: 0.03, c: 1, flat: 1, uv: 0.6 }), C.x + x, 3.44, C.z));      // the rails that hold the seat
     for (const [px, pz, r] of [[T.x - 2.2, T.z - 2.95, 0.13], [T.x - 2.2, T.z + 2.95, 0.13], [T.x + 2.2, T.z - 2.95, 0.13], [T.x + 2.2, T.z + 2.95, 0.13], [C.x - 1.4, C.z - 1.4, 0.085], [C.x - 1.4, C.z + 1.4, 0.085], [C.x + 1.4, C.z - 1.4, 0.085], [C.x + 1.4, C.z + 1.4, 0.085]]) tinted.push(tint(put(new THREE.CylinderGeometry(r * 0.95, r * 0.95, 0.03, 12), px, 0.015, pz), '#57524b'));
-    add(merge(woods), wood('#c9ab80'));
+    { const tableM = wood('#c9ab80'); add(merge(woods), tableM); onPhoto('oak-veneer', (im) => { swap(tableM, { map: photoTex(im, { size: 1024, rep: [0.5, 0.5], turn: Math.PI / 2 }) }); tableM.color.set('#f1dfc2'); }); }      // the kitchen table and chair: oak veneer
   }
-  if (cloths.length) add(mergeTinted(cloths), cloth('#ffffff', { vertexColors: true, sheen: 0.3 }));
+  // the rest of the home: floors, walls, a ceiling, and the hall, the bedroom and the bath (js/home-rooms.js). Its small cloth, painted and brass pieces join the lists above.
+  const more = addRooms({ THREE, RoundedBoxGeometry, PAL, SX, group, V3, V2, PI, lerp, clamp, smooth, hash, rr, canvas, texOf, again, paint, normalFrom, strokes, softBox, sheet, lathe, cord, loop, sweep, put, add, merge, mergeTinted, tint, boxUV, cloth, wood, brass, steel, painted, sit, cloths, tinted, brassG, weaveN, heather, knitN, knitC, woodC, softRectT, blobT, paperM, glossM, tileWallM, slipper: slipperFn, onPhoto, photoTex, photoRelief, swap, RoundedBox: RoundedBoxGeometry });
+  if (cloths.length) { const clothsM = cloth('#ffffff', { vertexColors: true, sheen: 0.3 }); add(mergeTinted(cloths), clothsM); onPhoto('linen', (im) => swap(clothsM, { map: photoTex(im, { size: 512, rep: [1.2, 1.2] }), normalMap: photoRelief(im, 1.6, [1.2, 1.2]) })); }
   if (tinted.length) add(mergeTinted(tinted), painted);
   if (brassG.length) add(merge(brassG), brass, { cast: false });
 
@@ -710,6 +732,79 @@ export function createHome({ THREE, RoundedBoxGeometry, PAL, SX, Z }) {
     if (quads.length) { const m = new THREE.Mesh(merge(quads), new THREE.MeshBasicMaterial({ map: blobT, color: '#1a1410', transparent: true, opacity: 0.42, depthWrite: false })); m.renderOrder = 2; group.add(m); }
   }
 
+  /* ---------- the scan: the home comes into being, and then it is mapped room by room ---------- */
+  // Every material of the home gets the same small patch, in one of three kinds:
+  //   the shell (floors, walls, ceilings, skirting): it is there as soon as the house has grown, but a room that is not mapped yet is bare: one even grey with a faint grid.
+  //                                                 Where the scan light has passed, the real surface is there. So from inside you never look out into the blank page.
+  //   the outside (the walls you see from the street): only grows, is never bare.
+  //   everything else (furniture, cloth, small things): not drawn until the light has reached it.
+  // uPulse is the house coming into being: a point (his lens) and how far the pulse from it has run, as a sphere. Surfaces come in a little behind that front, on a ragged
+  // edge with a thin warm white band on it. Ahead of them goes the wire cage (below). uRm are the five rooms'
+  // rectangles, uEn each room's doorway and how far the light has run from it. All of it in the home's own coordinates (uHome is where the home stands in the world).
+  const scanU = { uScanOn: { value: 0 }, uHome: { value: new THREE.Vector3() }, uPulse: { value: new THREE.Vector4(0, 0, 0, 1e5) }, uRm: { value: more.rooms.map((r) => new THREE.Vector4(r.x0, r.x1, r.z0, r.z1)) }, uEn: { value: more.rooms.map((r) => new THREE.Vector3(r.entry[0], r.entry[1], 1e5)) } };
+  const sprites = [];
+  const patch = (root) => root.traverse((o) => {
+    if (o.isSprite) { sprites.push(o); return; }
+    for (const m of [].concat(o.material || [])) {
+      if (!m || m.userData.scan) continue; m.userData.scan = true;
+      const kind = m.userData.ext ? 'EXT' : m.userData.shell ? 'SHELL' : 'THING', was = m.onBeforeCompile, key = m.customProgramCacheKey ? m.customProgramCacheKey() : '';
+      m.onBeforeCompile = (sh, r) => { was?.call(m, sh, r); Object.assign(sh.uniforms, scanU);
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec3 uHome;\nvarying vec3 vScanW;').replace('#include <project_vertex>', `#include <project_vertex>
+          { vec4 sw = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            sw = instanceMatrix * sw;
+          #endif
+          vScanW = (modelMatrix * sw).xyz - uHome; }`);
+        // No loop: each room answers "how far behind the light is this point" (below zero if it is not in that room, or the light is not there yet), and the largest answer wins.
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+          #define SCAN_${kind}
+          uniform float uScanOn; uniform vec4 uPulse; uniform vec4 uRm[5]; uniform vec3 uEn[5]; varying vec3 vScanW;
+          float scanBack(vec4 rm, vec3 en) { vec2 a = step(rm.xz, vScanW.xz) * step(vScanW.xz, rm.yw); return mix(-1.0, en.z - distance(vScanW.xz, en.xy), a.x * a.y); }`)
+          .replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
+          float growB = uPulse.w - distance(vScanW, uPulse.xyz) - 4.2 + 0.45 * sin(vScanW.x * 1.3 + vScanW.y * 2.1) * sin(vScanW.z * 1.7 - vScanW.y * 0.9);      // above zero: the surface is here already. It comes 4.2 behind the pulse, and not on a clean line
+          if (growB <= 0.0) discard;
+          float pulseGlow = step(uPulse.w, 900.0) * (smoothstep(2.6, 0.0, growB) * 0.3 + smoothstep(0.3, 0.0, growB) * 2.4), scanGlow = 0.0, scanBare = 0.0;
+          #ifndef SCAN_EXT
+            float scanB = max(max(max(scanBack(uRm[0], uEn[0]), scanBack(uRm[1], uEn[1])), max(scanBack(uRm[2], uEn[2]), scanBack(uRm[3], uEn[3]))), scanBack(uRm[4], uEn[4]));
+            #ifdef SCAN_SHELL
+              scanBare = uScanOn * step(scanB, 0.0);
+            #else
+              if (uScanOn > 0.5 && scanB <= 0.0) discard;
+            #endif
+            scanGlow += uScanOn * step(0.0, scanB) * (smoothstep(4.0, 0.0, scanB) * 0.58 + smoothstep(1.2, 0.0, scanB) * 1.5 + smoothstep(0.22, 0.0, scanB) * 3.0);      // a wide warm wash behind the light, a hot band, and a white-hot line where it is passing
+          #endif`)
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.78, 0.26) * scanGlow + vec3(1.0, 0.95, 0.86) * pulseGlow;')
+          .replace('#include <opaque_fragment>', `#ifndef STANDARD
+            outgoingLight += vec3(1.0, 0.78, 0.26) * scanGlow * 0.6 + vec3(1.0, 0.95, 0.86) * pulseGlow * 0.6;
+          #endif
+          #ifdef SCAN_SHELL
+            { vec3 gq = abs(fract(vScanW * 0.5) - 0.5); float line = 1.0 - smoothstep(0.0, 0.03, min(min(gq.x, gq.z), gq.y + step(vScanW.y, 0.1)));      // a grid every two units, on floors and up the walls
+              float shade = clamp(dot(outgoingLight, vec3(0.34)) * 1.5, 0.25, 1.0); outgoingLight = mix(outgoingLight, vec3(0.62, 0.66, 0.72) * (0.45 + 0.55 * shade) + vec3(0.2, 0.22, 0.26) * line, scanBare); }
+          #endif
+          #include <opaque_fragment>`); };
+      m.customProgramCacheKey = () => 'home-scan3|' + kind + '|' + key; m.needsUpdate = true;
+    }
+  });
+  patch(group);
+  // The wire cage. It shares the pulse with every surface above. A wire shows from the moment the pulse reaches it: dark graphite on the pale page while there is nothing
+  // behind it yet, then, as the real surface arrives under it, it turns warm white and burns away. So the wires always lead and the house follows them.
+  const cageM = new THREE.ShaderMaterial({ uniforms: { uPulse: scanU.uPulse, uInk: { value: new THREE.Color('#3b342d') }, uHot: { value: new THREE.Color('#fff3df') } }, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: `attribute float aK; varying vec3 vP; varying float vK; void main() { vP = position; vK = aK; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform vec4 uPulse; uniform vec3 uInk, uHot; varying vec3 vP; varying float vK;
+      void main() { float b = uPulse.w - distance(vP, uPulse.xyz); if (b <= 0.0) discard;
+        float rim = smoothstep(0.7, 0.0, b), burn = smoothstep(3.6, 4.7, b), a = max(rim, vK) * (1.0 - smoothstep(5.0, 8.0, b));      // b: how far behind the pulse. The surface comes in at about 4.2
+        gl_FragColor = vec4(mix(uInk, uHot, max(burn, rim * 0.5)), a * mix(0.9, 0.75, burn));
+        #include <colorspace_fragment>
+      }` });
+  cageM.userData.scan = true;
+  const cageG = new THREE.BufferGeometry(); cageG.setAttribute('position', new THREE.Float32BufferAttribute(more.cage.p, 3)); cageG.setAttribute('aK', new THREE.Float32BufferAttribute(more.cage.k, 1));
+  const cage = new THREE.Mesh(cageG, cageM); cage.renderOrder = 3; cage.frustumCulled = false; cage.visible = false; group.add(cage);
+  // on: is the scan running. reach: for each of the five rooms, how far the light has run from its doorway (a big number once the room is done).
+  // pulse(x, y, z, r): the pulse started at this point and has run r from it (a big number: the whole house is there, no wires). grow is the same on the floor. at(x, y, z): where the home stands in the world.
+  const scan = { rooms: more.rooms, patch, at(x, y, z) { scanU.uHome.value.set(x, y, z); group.position.set(x, y, z); }, pulse(x, y, z, r) { scanU.uPulse.value.set(x, y, z, r); cage.visible = r > 0.01 && r < 900; }, grow(x, z, r) { this.pulse(x, 0, z, r); }, cage,
+    set(on, reach) { scanU.uScanOn.value = on ? 1 : 0; if (reach) for (let i = 0; i < 5; i++) scanU.uEn.value[i].z = reach[i];
+      for (const sp of sprites) sp.visible = !on || Math.hypot(sp.position.x - more.rooms[1].entry[0], sp.position.z - more.rooms[1].entry[1]) < scanU.uEn.value[1].z; } };
+
   const update = (T) => { for (const f of live) f(T); };
-  return { group, keyObj, catBody, update };
+  return { group, keyObj, catBody, update, scan, loadPhotos, tour: more.tour, exit: more.exit, pins: more.pins, looks: more.looks, dockAt: more.dockAt, doors: more.doors, garden: more.garden };
 }

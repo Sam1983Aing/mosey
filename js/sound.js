@@ -134,11 +134,12 @@ function build(ctx, out) {
 
   // what it watches, once a frame
   const m = window.__mosey, M = m.marks, S = m.state, pos = m.robot.root.position;
+  const footOf = (d) => m.robot.stepIndex ? m.robot.stepIndex(d) : Math.floor(d * 7.4 / Math.PI - 0.5);      // which step it is on. The machined robot says when its own heels come down, the older ones step every 0.42
   const hud = document.getElementById('hud'), filmbar = document.getElementById('filmbar'), body = document.body.classList;
   const cards = [...document.querySelectorAll('.copy.tag')].map((el) => ({ el, on: el.classList.contains('is-on') }));
-  const vtags = [...document.querySelectorAll('.vtag')], notes = [...document.querySelectorAll('.pn')];
+  const vtags = [...document.querySelectorAll('.vtag')], notes = [...document.querySelectorAll('.pn')], pins = [...document.querySelectorAll('.mpin.spin')];
   const seen = {}, flag = (el, cls) => { const map = seen[cls] ||= new WeakMap(), now = el.classList.contains(cls), was = map.get(el) ?? now; map.set(el, now); return now && !was; };      // true on the frame an element gets a class
-  const last = { x: pos.x, y: pos.y, z: pos.z, d: S.d, foot: Math.floor(S.d * 7.4 / Math.PI - 0.5), slot: Math.floor(S.d / GAP), t: performance.now(), stepT: 0, noteT: 0, moved: performance.now() };
+  const last = { x: pos.x, y: pos.y, z: pos.z, d: S.d, foot: footOf(S.d), slot: Math.floor(S.d / GAP), t: performance.now(), stepT: 0, noteT: 0, moved: performance.now() };
   let act = 0, fall = 0, quiet = 1;
   (function frame(now) {
     requestAnimationFrame(frame);
@@ -146,7 +147,7 @@ function build(ctx, out) {
     const t = ctx.currentTime, d = S.d, v = (d - last.d) / dt, speed = Math.abs(v), jumped = Math.abs(d - last.d) > 4;      // jumped: a link took you somewhere else in one go
     const vy = (pos.y - last.y) / dt, ground = Math.hypot(pos.x - last.x, pos.z - last.z) / dt;
     Object.assign(last, { x: pos.x, y: pos.y, z: pos.z, d });
-    if (!on) { last.foot = Math.floor(d * 7.4 / Math.PI - 0.5); last.slot = Math.floor(d / GAP); return; }
+    if (!on) { last.foot = footOf(d); last.slot = Math.floor(d / GAP); return; }
 
     // which chapter this is
     const lens = hud.classList.contains('is-on'), film = filmbar.classList.contains('is-on');
@@ -173,7 +174,7 @@ function build(ctx, out) {
     airBP.frequency.setTargetAtTime(320 + 260 * sat(speed / 7) + 380 * fall, t, 0.3);
 
     // the steps: one each time a leg reaches the end of its swing, and only while it is really walking along the ground
-    const foot = Math.floor(d * 7.4 / Math.PI - 0.5);
+    const foot = footOf(d);
     if (foot !== last.foot && !jumped && m.robot.root.visible && ground > 0.25 && Math.abs(vy) < 0.9 && now - last.stepT > 70) {
       last.stepT = now; step(foot % 2 === 0, VOL.step * (0.8 + Math.random() * 0.35) * (1 - 0.45 * sat((speed - 3) / 5)) * (film ? 0 : 1), sc.dull);      // no two steps quite as loud: a row of identical taps sounds like a machine
     }
@@ -189,6 +190,7 @@ function build(ctx, out) {
     // moments
     for (const c of cards) { const isOn = c.el.classList.contains('is-on'); if (isOn && !c.on && !jumped) { pluck(hz(19), VOL.chime, { ring: 1.4, wetK: 0.7 }); pluck(hz(24), VOL.chime * 0.8, { ring: 1.6, wetK: 0.7, when: 0.09 }); } c.on = isOn; }      // a card switches on: two high notes, a fourth apart
     for (const el of vtags) if (flag(el, 'lock') && lens) { pluck(hz(31), VOL.chime * 0.9, { ring: 0.08, bright: 0.2, wetK: 0.3 }); pluck(hz(36), VOL.chime * 0.9, { ring: 0.12, bright: 0.2, wetK: 0.3, when: 0.07 }); }      // it has locked on to something
+    for (const el of pins) if (flag(el, 'is-on') && lens) { pluck(hz(28), VOL.chime * 0.9, { ring: 0.1, bright: 0.2, wetK: 0.3 }); pluck(hz(33), VOL.chime * 0.9, { ring: 0.16, bright: 0.2, wetK: 0.3, when: 0.08 }); }      // on its first walk: a pin has dropped on something it will remember
     for (const el of notes) {
       if (flag(el, 'on')) { pluck(hz(19), VOL.ping, { ring: 0.7, wetK: 0.6 }); pluck(hz(26), VOL.ping, { ring: 1.1, wetK: 0.6, when: 0.12 }); }                     // a notification: two notes going up
       if (flag(el, 'answered')) { const no = el.classList.contains('no'); pluck(hz(no ? 19 : 26), VOL.ping * 0.8, { ring: 0.5 }); pluck(hz(no ? 19 : 14), VOL.ping * 0.8, { ring: 1.2, when: 0.11 }); }      // done: two notes going down

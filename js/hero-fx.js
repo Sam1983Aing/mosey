@@ -3,7 +3,7 @@
 //   1. The rain. At page load the letters of the name fall out of the sky one by one, tumbling, and lock into place
 //      with a flash and a little shake, while the camera cranes up from the floor to its usual place. PRESS drops in last.
 //   2. The freeze. When the box hits the name, time almost stops and the camera flies once all the way round the box,
-//      with the letters hanging in the air and two rings running out across the floor. Then time snaps back.
+//      with the letters hanging in the air and a shockwave running out across the floor. Then time snaps back.
 // With reduced motion neither plays and the page is as it was.
 import * as THREE from 'three';
 if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -14,14 +14,35 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
   const RAIN = { start: 0.45, gap: 0.15, fall: 0.5, height: 9.5, crane: 3.5 };      // seconds between letters, seconds in the air, how far they fall, how long the camera takes
   const SPIN = { secs: 3.1, slow: 0.04 };                                             // how long the turn lasts in real time, and how slow the clock goes
   const st = { on: false, done: false, t: 0, rain: scrollY < 40, btn: false };
-  let m = null, lastNow = performance.now(), ring, ring2;
+  let m = null, lastNow = performance.now(), ring;
   if (st.rain) document.body.classList.add('hero-wait');      // PRESS waits for the name
 
-  function make() {      // two rings that run out across the floor from under the box. Made at the start, so nothing is compiled at the moment of impact
-    const g = new THREE.RingGeometry(0.93, 1, 128).rotateX(-Math.PI / 2);
-    ring = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#15151a', transparent: true, opacity: 0, depthWrite: false, fog: false }));
-    ring2 = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: '#f6c21a', transparent: true, opacity: 0, depthWrite: false, fog: false, toneMapped: false }));
-    for (const r of [ring, ring2]) { r.position.set(m.BX, 0.02, 0); r.scale.setScalar(0.01); r.renderOrder = 2; m.scene.add(r); }
+  // The shockwave that runs out across the floor from under the box, drawn as an instrument would draw it. One flat square on the floor and one shader, which
+  // works everything out from two numbers: how far a dot is from the middle, and at what angle.
+  //   a leading hairline, pale brass with a touch of warm white round it, that gets thinner as it travels and ends by thinning away
+  //   right behind it a soft dark band, strongest at the hairline and gone a unit further in, like a contact shadow that moves: the wave has body
+  //   two more hairlines in graphite, fainter, each starting a little later and running slower, so the gaps between the three open up
+  //   short ticks on the leading ring every two degrees and a longer one every tenth, like the scale on a lens barrel (the hero's drawing sheet again)
+  // Every radius is a fast start and a long ease out (one minus e to the minus t), never a straight line. Made at the start, so nothing is compiled at the impact.
+  function make() {
+    ring = new THREE.Mesh(new THREE.PlaneGeometry(30, 30).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({ transparent: true, depthWrite: false, fog: false, toneMapped: false,
+      uniforms: { uT: { value: 0 }, uInk: { value: new THREE.Color('#2b2b30') }, uBrass: { value: new THREE.Color('#a5843f') }, uWhite: { value: new THREE.Color('#fff6e4') } },
+      vertexShader: 'varying vec2 vP; void main() { vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `precision highp float; uniform float uT; uniform vec3 uInk, uBrass, uWhite; varying vec2 vP;
+        float line(float d, float w, float px) { return (1.0 - smoothstep(w, w + px, abs(d))) * min(1.0, 0.3 + w / px); }      // a line thinner than a dot gets fainter and is not left a dot wide
+        void main() {
+          float r = length(vP), px = fwidth(r), life = clamp(uT / 2.9, 0.0, 1.0), fade = 1.0 - smoothstep(0.4, 1.0, life), thin = 1.0 - 0.9 * smoothstep(0.0, 1.0, life);
+          float R1 = 0.5 + 9.6 * (1.0 - exp(-uT / 0.95)), R2 = 0.4 + 7.6 * (1.0 - exp(-max(uT - 0.14, 0.0) / 1.25)), R3 = 0.3 + 5.9 * (1.0 - exp(-max(uT - 0.3, 0.0) / 1.6));
+          float h1 = line(r - R1, 0.042 * thin, px) * fade, h2 = line(r - R2, 0.016 * thin, px) * fade * 0.42 * step(0.14, uT), h3 = line(r - R3, 0.012 * thin, px) * fade * 0.28 * step(0.3, uT);
+          float d = R1 - r, band = step(0.0, d) * exp(-d / 0.55) * fade * 0.24, glow = exp(-abs(d) / 0.11) * fade * 0.4;
+          float seg = 6.2831853 / 180.0, k = atan(vP.y, vP.x) / seg, arc = abs(fract(k + 0.5) - 0.5) * seg * r, tall = step(mod(floor(k + 0.5), 10.0), 0.5), len = mix(0.16, 0.38, tall) * (0.55 + 0.45 * thin);
+          float tick = (1.0 - smoothstep(0.009, 0.009 + px, arc)) * step(0.0, d) * step(d, len) * fade * mix(0.5, 0.8, tall) * smoothstep(0.045, 0.1, seg * r);      // near the middle the ticks would touch, so they wait until there is room
+          float dark = clamp(band + h2 + h3 + tick, 0.0, 1.0); vec4 acc = vec4(uInk * dark, dark);
+          acc = acc * (1.0 - glow) + vec4(uWhite * glow, glow); acc = acc * (1.0 - h1) + vec4(mix(uWhite, uBrass, 0.5 + 0.5 * life) * h1, h1);
+          if (acc.a < 0.003) discard; gl_FragColor = vec4(acc.rgb / acc.a, acc.a);
+          #include <colorspace_fragment>
+        }` }));
+    ring.position.set(m.BX, 0.024, 0); ring.renderOrder = 2; ring.frustumCulled = false; ring.visible = false; m.scene.add(ring);
   }
   // PRESS falls in after the name and lands on a spring: it goes past its place, squashes, comes back up and settles.
   // One formula, a sine that dies away (the same one the letters land with), drives how far it dips, how flat it gets and how it rocks.
@@ -96,9 +117,7 @@ if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
     const th = Math.PI * 2 * ease(u), k = Math.sin(Math.PI * u);      // once all the way round, so it ends exactly where the page's own camera is
     C.set(BX, 1.2, 0); v.copy(camera.position).sub(C).applyAxisAngle(UP, th).multiplyScalar(1 - 0.22 * k); v.y += 1.0 * k;
     camera.position.copy(C).add(v); aim.copy(look).lerp(C, sat(k * 1.6)); camera.lookAt(aim);
-    const r1 = sat(st.t / 2.2), r2 = sat((st.t - 0.25) / 2.2);
-    ring.scale.setScalar(0.5 + 11 * (1 - Math.pow(1 - r1, 2))); ring.material.opacity = 0.5 * Math.pow(1 - r1, 1.4);
-    ring2.scale.setScalar(0.5 + 9 * (1 - Math.pow(1 - r2, 2))); ring2.material.opacity = r2 > 0 ? 0.7 * Math.pow(1 - r2, 1.4) : 0;
-    if (u >= 1) { st.on = false; st.done = true; fx.timeScale = 1; world.timestep = 1 / 60; ring.material.opacity = ring2.material.opacity = 0; }
+    ring.material.uniforms.uT.value = st.t; ring.visible = st.t < 2.9;
+    if (u >= 1) { st.on = false; st.done = true; fx.timeScale = 1; world.timestep = 1 / 60; ring.visible = false; }
   };
 }

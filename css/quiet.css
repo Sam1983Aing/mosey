@@ -1,0 +1,100 @@
+/* The calmer frame: no bar at the bottom (the menu at the top is the navigation),
+   no corner brackets, no logo in the loader. Lighter fade bands and half the grain came with it.
+   Loaded by default. ?ui=full leaves this file out and shows the page as it was. */
+.rail, .rail-hint { display: none !important; }                       /* the bar at the bottom was distracting */
+.brk, #hud .c { display: none !important; }                           /* no corner squares */
+.boot-seal img, .boot-seal .brk { display: none !important; }         /* no logo in the intro: the loader keeps only its ring and the count */
+.boot-seal { width: min(22vw, 120px) !important; }
+.bar::before { opacity: 0.45; height: 96px !important; }              /* the band behind the menu, lighter */
+.grain { opacity: 0.16 !important; }
+#hud::before { opacity: 0.5; }
+
+/* On a phone the menu was hidden and the dots on the bottom bar did its job. With the bar gone the menu comes back as one small row under the logo. */
+@media (max-width: 820px) {
+  .tabs { display: flex; left: var(--pad); right: var(--pad); top: calc(100% - 4px); translate: 0 0; justify-content: space-between; gap: 0; font-size: 9px; letter-spacing: 0.1em; }
+  .tabs a { padding: 4px 0 9px; }
+  .mapchip { top: 100px; }
+  .bar::before { height: 128px !important; opacity: 0.6; }
+}
+
+/* The browser's own scrollbar is hidden, it added too much yellow and blue.
+   The page still scrolls the same way, and the small track under the menu shows where you are. */
+html { scrollbar-width: none !important; }
+html::-webkit-scrollbar { display: none !important; width: 0 !important; }
+
+/* While the dark front of Mosey's home fills the top of the picture, the pale band behind the menu is taken away (js/main.js sets body.at-house). */
+body.at-house .bar::before { opacity: 0 !important; }
+
+/* The caption under the phone ("While you're out, it does the rounds.") was hard to read. Two causes. The box was near-black on the phone stage's near-black. And the phone frame's big drop shadow was painted over
+   the left half of the caption, greying its first sentence: the captions live in <main> (z-index 3) and the frame, added later at the same
+   z-index, drew on top of it. While the phone is up, <main> goes one step above the frame, and the box is a lighter slate with a fine edge.
+   Everywhere else the caption keeps its black box, where it sits over bright rooms. */
+body.pb-on main { z-index: 4; }
+.hudline { transition: background-color 0.35s, box-shadow 0.35s; }
+body.pb-on .hudline { background: #3b4162; color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16), 0 14px 34px rgba(0, 0, 0, 0.45); }
+
+/* ---------- The loader. The first one was a dark screen that opened onto a light hero, which made no sense. The second drew his head line
+   by line and started on two small lines. This is the third: the loader is the first corner of the hero's drawing sheet, the same paper and grid. His head is there as a clean outline from the first
+   frame. His real colours (graphite, dark glass, brass) rise inside it from the bottom as the page really boots (--p runs 0 to 100,
+   js/loader.js), with a thin level line at the surface. At 100 his lens wakes with a glint and the paper lifts off the hero, which is the same
+   paper. No dark screen and no round opening. */
+#loading { background-color: #e5ddce; color: #15151a; -webkit-mask-image: none !important; mask-image: none !important;
+  background-image: linear-gradient(rgba(21, 21, 26, 0.075) 1px, transparent 1px), linear-gradient(90deg, rgba(21, 21, 26, 0.075) 1px, transparent 1px),
+    linear-gradient(rgba(21, 21, 26, 0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(21, 21, 26, 0.04) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px; background-position: 50% 46%; }
+.boot-seal { display: none !important; }
+.boot-head { display: block !important; position: relative; width: min(62vw, 340px); aspect-ratio: 1; margin-top: -9vh;
+  --lv: calc(8% + var(--p, 0) * 0.87%); }      /* how high the colour stands, from the bottom of the square: his base is at 8 percent, the antenna's ball at 95 */
+.boot-head svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; stroke-linecap: round; stroke-linejoin: round; }
+.bh-line { stroke: rgba(42, 42, 49, 0.5); stroke-width: 1.4; }
+.bh-fill { position: absolute; inset: 0; clip-path: inset(calc(100% - var(--lv)) -6% -6% -6%); }
+.bh-ink { stroke: #17171c; stroke-width: 1.5; }
+.bh-ink .bh-box, .bh-ink .bh-ear, .bh-ink .bh-neck, .bh-ink .bh-foot { fill: #3a3a41; }
+.bh-ink .bh-visor { fill: #1c1c21; }
+.bh-ink .bh-l1 { fill: #26262c; stroke: #c8a24a; stroke-width: 2.4; }
+.bh-ink .bh-l2 { fill: #101014; stroke: #5a5a63; stroke-width: 1.1; }
+.bh-ink .bh-l3 { fill: #07070a; stroke: #3a3a41; stroke-width: 1.1; }
+.bh-ink .bh-ball { fill: #c8a24a; }
+.bh-ink .bh-stem, .bh-ink .bh-base { fill: none; }
+.bh-pupil { stroke: none; fill: #000; opacity: 0; }
+.bh-glint { stroke: none; fill: #f3e2b0; opacity: 0; }
+.bh-level { position: absolute; left: 4%; right: 4%; bottom: var(--lv); height: 1px; background: linear-gradient(90deg, transparent, rgba(21, 21, 26, 0.4) 18%, rgba(21, 21, 26, 0.4) 82%, transparent); }
+.boot-line { top: calc(46% + min(38vw, 200px)); color: rgba(21, 21, 26, 0.62); font-size: 12px; }
+.boot-line b { color: #15151a; }
+/* ready: the level line goes, the lens glints once, and the sheet lifts */
+#loading.out { animation: bootLift 0.7s cubic-bezier(0.5, 0, 0.2, 1) 0.55s forwards; }
+#loading.out .bh-level { opacity: 0; transition: opacity 0.2s; }
+#loading.out .bh-glint { animation: bootGlint 0.5s 0.05s forwards; }
+#loading.out .boot-head { animation: bootHead 0.9s cubic-bezier(0.5, 0, 0.2, 1) 0.45s forwards; }
+#loading.out .boot-line { opacity: 0; transition: opacity 0.3s 0.3s; }
+@keyframes bootLift { to { opacity: 0; visibility: hidden; } }
+@keyframes bootGlint { 0% { opacity: 0; scale: 0.4; } 45% { opacity: 1; scale: 1.5; } 100% { opacity: 0.9; scale: 1; } }
+@keyframes bootHead { to { scale: 1.08; opacity: 0; } }
+.bh-glint { transform-origin: 96px 100px; }
+@media (prefers-reduced-motion: reduce) { #loading.out { animation: bootLift 0.4s forwards; } #loading.out .boot-head, #loading.out .bh-glint { animation: none; } }
+
+/* The shipping label that was slapped on under the box in the intro is hidden (Good Company, First Edition,
+   "The small, smart AI companion for the whole family.", 500 robots, only $149). The box says most of it itself. The label at the very
+   end (.lb-end) is handled with the Reserve scene. ?ui=full still shows this one. */
+.copy.hero.hero-line { display: none !important; }
+
+/* On the specs card ("Small, on purpose.") the "Drag to turn it" chip goes, because the plinth turns him by itself now.
+   Dragging still works. */
+.fine.drag { display: none !important; }
+
+/* The last screen's one small line ("Good Company is made up..."). It was a fixed box inside a container that is moved with translate,
+   so it took the container's width, which is nothing now that the ticket is gone, and broke into one word a line down the button.
+   It sits in the flow now, the container goes to the bottom edge. */
+.copy.end { bottom: 14px; margin-bottom: 0; max-width: 94vw; text-align: center; }
+.end-fine { position: static; white-space: nowrap; }
+@media (max-width: 820px) { .end-fine { white-space: normal; max-width: 86vw; } }
+
+/* Behind the phone at the stove: the same picture again, grey, soft and dark, in place of the flat dark page. js/phone.js copies
+   the 3D picture into .pb-bg while the phone is up. The dark veil over it (.pb-back) keeps the white headline and the cards readable. */
+.pb-bg { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; opacity: calc(var(--pk, 0) * 4); scale: 1.08;
+  filter: grayscale(1) blur(7px) brightness(0.85) contrast(1.1); }
+.pb-back { background: linear-gradient(90deg, rgba(14, 15, 19, 0.5), rgba(10, 10, 14, 0.66) 45%, rgba(8, 8, 12, 0.82) 60%, rgba(8, 8, 12, 0.8)); }      /* darker on the right, under the headline and the cards */
+body.pb-on .hudline { background: rgba(38, 40, 48, 0.92); }      /* the caption's box goes neutral grey with the grey backdrop (it was a slate blue for the old navy page) */
+
+/* The small line on the last screen ("Good Company is made up, so pressing the button does nothing. Yet.") is hidden. */
+.end-fine { display: none !important; }
